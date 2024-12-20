@@ -1,10 +1,11 @@
 import os
+import pathlib
 import requests
-from docutils.nodes import description
 from datetime import datetime
 import fiftyone as fo
+from requests import session
 
-NUM_IMAGES_DOWNLOAD = 10
+NUM_IMAGES_DOWNLOAD = 400
 OLDEST_PHOTO = datetime(2000, 1, 1, 0, 0, 1)
 DOWNLOAD_LOCATION = "./downloads/"
 # Words or strings we don't want in the description, title, or tags
@@ -21,7 +22,7 @@ for filename in os.listdir(DOWNLOAD_LOCATION):
     file_path = os.path.join(DOWNLOAD_LOCATION, filename)
 
     # Check if it is a file (not a subdirectory)
-    if os.path.isfile(file_path):
+    if os.path.isfile(file_path) and pathlib.Path(file_path).suffix == ".jpg":
         os.remove(file_path)  # Remove the file
 
 def download_image(url):
@@ -56,16 +57,30 @@ def test_to_keep(photo):
         else:
             return False
 
+def parse_photo_field(field_name, photo_record):
+    if field_name in photo_record:
+        return photo_record[field_name]
+    else:
+        return ""
+
 def create_sample(photo):
-    # TODO
     # Download the photo
     file_path = download_image(photo["url_z"])
+    caption = "Title: " + parse_photo_field("title", photo) + "\nDescription: " + photo["description"]["_content"]
+    tags = parse_photo_field("tags", photo).split()
 
-    # Make the sample
-    # add the tags
-    # add the fields - datetaken, id (photo_id), latitude, longitude, title, description.content, 'ownername', woeid, url_z
+    sample = fo.Sample(file_path, tags=tags)
+    sample["caption"] = caption
+    sample["flickr_id"] = parse_photo_field("id", photo)
+    sample["flickr_user"] = parse_photo_field("ownername", photo)
+    sample["date_taken"] = datetime.strptime(photo["datetaken"], "%Y-%m-%d %H:%M:%S")
+    sample["date_downloaded"] = datetime.now()
+    sample["flickr_url"] = photo["url_z"]
+    sample["woeid"] = parse_photo_field("woeid", photo)
+    #Geo https://docs.voxel51.com/user_guide/using_datasets.html#geolocation
+    sample["location"] = fo.GeoLocation(point=[float(photo["longitude"]), float(photo["latitude"])])
+    return  sample
 
-    print("done")
 
 if __name__ == '__main__':
     print("started")
@@ -95,5 +110,7 @@ if __name__ == '__main__':
         else:
             payload["page"] = payload["page"] + 1
 
+    session = fo.launch_app(dataset)
+    session.wait()
     #dataset.save()
     print("done")
